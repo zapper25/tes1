@@ -57,7 +57,7 @@ static const char * const mem_sleep_labels[] = {
 const char *mem_sleep_states[PM_SUSPEND_MAX];
 
 suspend_state_t mem_sleep_current = PM_SUSPEND_TO_IDLE;
-suspend_state_t mem_sleep_default = PM_SUSPEND_MAX;
+suspend_state_t mem_sleep_default = PM_SUSPEND_TO_IDLE;
 suspend_state_t pm_suspend_target_state;
 EXPORT_SYMBOL_GPL(pm_suspend_target_state);
 
@@ -533,7 +533,6 @@ static int suspend_prepare(suspend_state_t state)
 	if (!error)
 		return 0;
 
-	log_suspend_abort_reason("One or more tasks refusing to freeze");
 	suspend_stats.failed_freeze++;
 	dpm_save_failed_step(SUSPEND_FREEZE);
  Finish:
@@ -563,6 +562,7 @@ void __weak arch_suspend_enable_irqs(void)
  */
 static int suspend_enter(suspend_state_t state, bool *wakeup)
 {
+	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 	int error, last_dev;
 
 	error = platform_suspend_prepare(state);
@@ -574,8 +574,8 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
 		last_dev %= REC_FAILED_NUM;
 		pr_err("late suspend of devices failed\n");
-		log_suspend_abort_reason("late suspend of %s device failed",
-					 suspend_stats.failed_devs[last_dev]);
+		log_suspend_abort_reason("%s device failed to power down",
+			suspend_stats.failed_devs[last_dev]);
 		goto Platform_finish;
 	}
 	error = platform_suspend_prepare_late(state);
@@ -593,7 +593,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		last_dev %= REC_FAILED_NUM;
 		pr_err("noirq suspend of devices failed\n");
 		log_suspend_abort_reason("noirq suspend of %s device failed",
-					 suspend_stats.failed_devs[last_dev]);
+			suspend_stats.failed_devs[last_dev]);
 		goto Platform_early_resume;
 	}
 	error = platform_suspend_prepare_noirq(state);
@@ -605,7 +605,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
 	error = disable_nonboot_cpus();
 	if (error || suspend_test(TEST_CPUS)) {
-		log_suspend_abort_reason("Disabling non-boot cpus failed");
+		//log_suspend_abort_reason("Disabling non-boot cpus failed");
 		goto Enable_cpus;
 	}
 
@@ -626,8 +626,13 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			trace_suspend_resume(TPS("machine_suspend"),
 				state, false);
 		} else if (*wakeup) {
+			pm_get_active_wakeup_sources(suspend_abort,
+				MAX_SUSPEND_ABORT_LEN);
+			log_suspend_abort_reason(suspend_abort);
 			error = -EBUSY;
 		}
+
+		start_logging_wakeup_reasons();
 		syscore_resume();
 	}
 
@@ -662,7 +667,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
  */
 int suspend_devices_and_enter(suspend_state_t state)
 {
-	int error;
+	int error, last_dev;
 	bool wakeup = false;
 
 	if (!sleep_state_supported(state))
@@ -678,9 +683,11 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
+		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
+		last_dev %= REC_FAILED_NUM;
 		pr_err("Some devices failed to suspend, or early wake event detected\n");
-		log_suspend_abort_reason(
-				"Some devices failed to suspend, or early wake event detected");
+		log_suspend_abort_reason("%s device failed to suspend, or early wake event detected",
+			suspend_stats.failed_devs[last_dev]);
 		goto Recover_platform;
 	}
 	suspend_test_finish("suspend devices");
@@ -810,12 +817,12 @@ int pm_suspend(suspend_state_t state)
 		return -EINVAL;
 
 	pm_suspend_marker("entry");
-	pr_info("suspend entry (%s)\n", mem_sleep_labels[state]);
+
+	pr_debug("suspend entry (%s)\n", mem_sleep_labels[state]);
 
 #ifdef CONFIG_PM_SLEEP_MONITOR
 	start_suspend_mon();
 #endif
-
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
@@ -829,7 +836,7 @@ int pm_suspend(suspend_state_t state)
 #endif
 
 	pm_suspend_marker("exit");
-	pr_info("suspend exit\n");
+	pr_debug("suspend exit\n");
 	measure_wake_up_time();
 	return error;
 }

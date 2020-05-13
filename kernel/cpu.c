@@ -1034,6 +1034,19 @@ static int do_cpu_down(unsigned int cpu, enum cpuhp_state target)
 	int err;
 
 	/*
+	 * For some reason some vendor versions love taking down
+	 * cores 6 and 7 and never getting them online again.
+	 * This is impossible to debug due to the number of vendor
+	 * versions that people use. Disallow taking big (and prime)
+	 * cores by userspace down completely.
+	 */
+	if (cpumask_intersects(cpumask_of(cpu), cpu_perf_mask) ||
+	    cpumask_intersects(cpumask_of(cpu), cpu_perfp_mask)) {
+		pr_info("%s: trying to take down core %i\n", __func__, cpu);
+		return -EINVAL;
+	}
+
+	/*
 	 * When cpusets are enabled, the rebuilding of the scheduling
 	 * domains is deferred to a workqueue context. Make sure
 	 * that the work is completed before proceeding to the next
@@ -1277,7 +1290,7 @@ int freeze_secondary_cpus(int primary)
 			continue;
 
 		if (pm_wakeup_pending()) {
-			pr_info("Wakeup pending. Abort CPU freeze\n");
+			pr_info("Wakeup pending. Abort CPU%i freeze\n", cpu);
 			error = -EBUSY;
 			break;
 		}
@@ -1296,7 +1309,7 @@ int freeze_secondary_cpus(int primary)
 	if (!error)
 		BUG_ON(num_online_cpus() > 1);
 	else
-		pr_err("Non-boot CPUs are not disabled\n");
+		pr_debug("Non-boot CPUs are not disabled\n");
 
 	/*
 	 * Make sure the CPUs won't be enabled by someone else. We need to do
@@ -1337,7 +1350,7 @@ void enable_nonboot_cpus(void)
 		error = _cpu_up(cpu, 1, CPUHP_ONLINE);
 		trace_suspend_resume(TPS("CPU_ON"), cpu, false);
 		if (!error) {
-			pr_info("CPU%d is up\n", cpu);
+			pr_debug("CPU%d is up\n", cpu);
 			cpu_device = get_cpu_device(cpu);
 			if (!cpu_device)
 				pr_err("%s: failed to get cpu%d device\n",
@@ -2352,6 +2365,30 @@ EXPORT_SYMBOL(__cpu_active_mask);
 
 struct cpumask __cpu_isolated_mask __read_mostly;
 EXPORT_SYMBOL(__cpu_isolated_mask);
+
+#if CONFIG_LITTLE_CPU_MASK
+static const unsigned long lp_cpu_bits = CONFIG_LITTLE_CPU_MASK;
+const struct cpumask *const cpu_lp_mask = to_cpumask(&lp_cpu_bits);
+#else
+const struct cpumask *const cpu_lp_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_lp_mask);
+
+#if CONFIG_BIG_CPU_MASK
+static const unsigned long perf_cpu_bits = CONFIG_BIG_CPU_MASK;
+const struct cpumask *const cpu_perf_mask = to_cpumask(&perf_cpu_bits);
+#else
+const struct cpumask *const cpu_perf_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_perf_mask);
+
+#if CONFIG_PRIME_CPU_MASK
+static const unsigned long perfp_cpu_bits = CONFIG_PRIME_CPU_MASK;
+const struct cpumask *const cpu_perfp_mask = to_cpumask(&perfp_cpu_bits);
+#else
+const struct cpumask *const cpu_perfp_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_perfp_mask);
 
 void init_cpu_present(const struct cpumask *src)
 {

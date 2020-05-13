@@ -75,6 +75,7 @@
 #include <linux/ptrace.h>
 #include <linux/tracehook.h>
 #include <linux/printk.h>
+#include <linux/cache.h>
 #include <linux/cgroup.h>
 #include <linux/cpuset.h>
 #include <linux/audit.h>
@@ -100,6 +101,10 @@
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
+
+#ifdef CONFIG_TASK_DELAY_ACCT
+#include <linux/delayacct.h>
+#endif
 
 #include "../../lib/kstrtox.h"
 
@@ -312,14 +317,17 @@ static int proc_pid_wchan(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long wchan;
 	char symname[KSYM_NAME_LEN];
 
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS))
+		goto print0;
+
 	wchan = get_wchan(task);
+	if (wchan && !lookup_symbol_name(wchan, symname)) {
+		seq_puts(m, symname);
+		return 0;
+	}
 
-	if (wchan && ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS)
-			&& !lookup_symbol_name(wchan, symname))
-		seq_printf(m, "%s", symname);
-	else
-		seq_putc(m, '0');
-
+print0:
+	seq_putc(m, '0');
 	return 0;
 }
 #endif /* CONFIG_KALLSYMS */
@@ -698,6 +706,51 @@ static const struct file_operations proc_single_file_operations = {
 	.release	= single_release,
 };
 
+#ifdef CONFIG_TASK_DELAY_ACCT
+struct delay_struct {
+	u64 version;
+	u64 blkio_delay;      /* wait for sync block io completion */
+	u64 swapin_delay;     /* wait for swapin block io completion */
+	u64 freepages_delay;  /* wait for memory reclaim */
+	u64 cpu_runtime;
+	u64 cpu_run_delay;
+};
+
+static ssize_t delay_read(struct file *file, char __user *buf,
+			  size_t count, loff_t *ppos)
+{
+	struct task_struct *task = get_proc_task(file_inode(file));
+	struct delay_struct d = {};
+	unsigned long flags;
+	u64 blkio_delay, swapin_delay, freepages_delay;
+	loff_t dummy_pos = 0;
+	if (!task)
+		return -ESRCH;
+
+	raw_spin_lock_irqsave(&task->delays->lock, flags);
+	blkio_delay = task->delays->blkio_delay;
+	swapin_delay = task->delays->swapin_delay;
+	freepages_delay = task->delays->freepages_delay;
+	raw_spin_unlock_irqrestore(&task->delays->lock, flags);
+
+	d.version = 1;
+	d.blkio_delay = blkio_delay >> 20;
+	d.swapin_delay = swapin_delay >> 20;
+	d.freepages_delay = freepages_delay >> 20;
+
+	if (likely(sched_info_on())) {
+		d.cpu_runtime = task->se.sum_exec_runtime >> 20;
+		d.cpu_run_delay = task->sched_info.run_delay >> 20;
+	}
+
+	put_task_struct(task);
+	return simple_read_from_buffer(buf, count, &dummy_pos, &d, sizeof(struct delay_struct));
+}
+
+static const struct file_operations proc_delay_file_operations = {
+	.read = delay_read,
+};
+#endif
 
 struct mm_struct *proc_mem_open(struct inode *inode, unsigned int mode)
 {
@@ -2050,6 +2103,8 @@ static int dname_to_vma_addr(struct dentry *dentry,
 	unsigned long long sval, eval;
 	unsigned int len;
 
+	if (str[0] == '0' && str[1] != '-')
+		return -EINVAL;
 	len = _parse_integer(str, 16, &sval);
 	if (len & KSTRTOX_OVERFLOW)
 		return -EINVAL;
@@ -2061,6 +2116,8 @@ static int dname_to_vma_addr(struct dentry *dentry,
 		return -EINVAL;
 	str++;
 
+	if (str[0] == '0' && str[1])
+		return -EINVAL;
 	len = _parse_integer(str, 16, &eval);
 	if (len & KSTRTOX_OVERFLOW)
 		return -EINVAL;
@@ -2345,6 +2402,7 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 		}
 	}
 	up_read(&mm->mmap_sem);
+	mmput(mm);
 
 	for (i = 0; i < nr_files; i++) {
 		p = flex_array_get(fa, i);
@@ -2358,7 +2416,6 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 	}
 	if (fa)
 		flex_array_free(fa);
-	mmput(mm);
 
 out_put_task:
 	put_task_struct(task);
@@ -3165,6 +3222,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_SCHED_INFO
 	ONE("schedstat",  S_IRUGO, proc_pid_schedstat),
+#endif
+#ifdef CONFIG_TASK_DELAY_ACCT
+	REG("delay",      S_IRUGO, proc_delay_file_operations),
 #endif
 #ifdef CONFIG_LATENCYTOP
 	REG("latency",  S_IRUGO, proc_lstats_operations),

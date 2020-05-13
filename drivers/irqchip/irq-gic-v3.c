@@ -29,13 +29,12 @@
 #include <linux/percpu.h>
 #include <linux/slab.h>
 #include <linux/msm_rtb.h>
-#include <linux/wakeup_reason.h>
-
 
 #include <linux/irqchip.h>
 #include <linux/irqchip/arm-gic-common.h>
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/irqchip/irq-partition-percpu.h>
+#include <linux/wakeup_reason.h>
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
@@ -566,8 +565,8 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 			err = handle_domain_irq(gic_data.domain, irqnr, regs);
 			if (err) {
 				WARN_ONCE(true, "Unexpected interrupt received!\n");
-				log_abnormal_wakeup_reason(
-						"unexpected HW IRQ %u", irqnr);
+				log_bad_wake_reason("unmapped HW IRQ %u",
+						    irqnr);
 				if (static_key_true(&supports_deactivate)) {
 					if (irqnr < 8192)
 						gic_write_dir(irqnr);
@@ -693,7 +692,7 @@ static int __gic_populate_rdist(struct redist_region *region, void __iomem *ptr)
 		gic_data_rdist_rd_base() = ptr;
 		gic_data_rdist()->phys_base = region->phys_base + offset;
 
-		pr_info("CPU%d: found redistributor %lx region %d:%pa\n",
+		pr_debug("CPU%d: found redistributor %lx region %d:%pa\n",
 			smp_processor_id(), mpidr,
 			(int)(region - gic_data.redist_regions),
 			&gic_data_rdist()->phys_base);

@@ -52,6 +52,7 @@
 #include <linux/notifier.h>
 #include <linux/fb.h>
 #endif
+#include <linux/pm_qos.h>
 
 /* macros definition */
 #define GOODIX_CORE_DRIVER_NAME		"goodix_ts"
@@ -94,8 +95,6 @@
 #define GTP_EXIT_GAME_CMD 0x0F
 
 #define CONFIG_TOUCHSCREEN_GOODIX_DEBUG_FS
-
-#define CONFIG_GOODIX_HWINFO
 
 /*
  * struct goodix_module - external modules container
@@ -393,7 +392,7 @@ struct goodix_ts_hw_ops {
 /*
  * struct goodix_ts_esd - esd protector structure
  * @esd_work: esd delayed work
- * @esd_on: true - turn on esd protection, false - turn
+ * @esd_on: 1 - turn on esd protection, 0 - turn
  *  off esd protection
  * @esd_mutex: protect @esd_on flag
  */
@@ -402,7 +401,7 @@ struct goodix_ts_esd {
 	struct mutex esd_mutex;
 	struct notifier_block esd_notifier;
 	struct goodix_ts_core *ts_core;
-	bool esd_on;
+	atomic_t esd_on;
 };
 
 /*
@@ -492,10 +491,8 @@ struct goodix_ts_core {
 #ifdef CONFIG_TOUCHSCREEN_GOODIX_DEBUG_FS
 	struct dentry *debugfs;
 #endif
-#ifdef CONFIG_GOODIX_HWINFO
-	int dbclick_count;
-#endif
 
+	struct pm_qos_request pm_touch_req;
 };
 
 struct goodix_mode_switch {
@@ -702,15 +699,18 @@ static inline u32 checksum_be32(u8 *data, u32 size)
 #define ECHKSUM					1002
 #define EMEMCMP					1003
 
-#define CONFIG_GOODIX_DEBUG
+//#define CONFIG_GOODIX_DEBUG
 /* log macro */
+#ifdef CONFIG_GOODIX_DEBUG
 #define ts_info(fmt, arg...)	pr_info("[GTP9886-INF][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
 #define	ts_err(fmt, arg...)		pr_err("[GTP9886-ERR][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
 #define boot_log(fmt, arg...)	g_info(fmt, ##arg)
-#ifdef CONFIG_GOODIX_DEBUG
 #define ts_debug(fmt, arg...)	pr_info("[GTP9886-DBG][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
 #else
-#define ts_debug(fmt, arg...)	do {} while (0)
+#define ts_info(fmt, arg...)	pr_debug("[GTP9886-INF][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
+#define	ts_err(fmt, arg...)		pr_debug("[GTP9886-ERR][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
+#define boot_log(fmt, arg...)	pr_debug(fmt, ##arg)
+#define ts_debug(fmt, arg...)	pr_debug("[GTP9886-DBG][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
 #endif
 
 /**

@@ -2,7 +2,7 @@
  * Goodix GTX5 Gesture Dirver
  *
  * Copyright (C) 2015 - 2016 Goodix, Inc.
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  * Authors:  Wang Yafei <wangyafei@goodix.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -399,10 +399,6 @@ static int gsx_gesture_ist(struct goodix_ts_core *core_data,
 	unsigned char clear_reg = 0;
 	unsigned char checksum = 0, temp_data[GSX_KEY_DATA_LEN];
 	struct goodix_ts_device *ts_dev = core_data->ts_dev;
-#ifdef CONFIG_GOODIX_HWINFO
-	char ch[64] = { 0x0, };
-#endif
-
 
 	/*ts_debug("gsx_gesture_ist, core_data-suspend=%d",
 			atomic_read(&core_data->suspended));*/
@@ -504,15 +500,11 @@ static int gsx_gesture_ist(struct goodix_ts_core *core_data,
 
 	if (temp_data[2] == 0xcc && core_data->double_wakeup) {
 		/*ts_info("Gesture match success, resume IC");*/
-#ifdef CONFIG_GOODIX_HWINFO
-		if (core_data) {
-		core_data->dbclick_count++;
-		snprintf(ch, sizeof(ch), "%d", core_data->dbclick_count);
-		}
-#endif
 		input_report_key(core_data->input_dev, KEY_WAKEUP, 1);
+		input_report_key(core_data->input_dev, KEY_DOUBLE_TAP, 1);
 		input_sync(core_data->input_dev);
 		input_report_key(core_data->input_dev, KEY_WAKEUP, 0);
+		input_report_key(core_data->input_dev, KEY_DOUBLE_TAP, 0);
 		input_sync(core_data->input_dev);
 		goto gesture_ist_exit;
 
@@ -551,25 +543,25 @@ static int goodix_set_suspend_func(struct goodix_ts_core *core_data)
 	u8 state_data[3] = {0};
 	int ret;
 
-	if (core_data->double_wakeup && core_data->fod_status) {
+	if (core_data->double_wakeup && (core_data->aod_status || core_data->fod_status)) {
 		state_data[0] = GSX_GESTURE_CMD;
 		state_data[1] = 0x01;
 		state_data[2] = 0xF7;
 		ret = goodix_i2c_write(dev, GSX_REG_GESTURE, state_data, 3);
 		ts_info("Set IC double wakeup mode on,FOD mode on;");
-	} else if (core_data->double_wakeup && (!core_data->fod_status)) {
+	} else if (core_data->double_wakeup && (core_data->aod_status == 0 && !core_data->fod_status)) {
 		state_data[0] = GSX_GESTURE_CMD;
 		state_data[1] = 0x03;
 		state_data[2] = 0xF5;
 		ret = goodix_i2c_write(dev, GSX_REG_GESTURE, state_data, 3);
 		ts_info("Set IC double wakeup mode on,FOD mode off;");
-	} else if (!core_data->double_wakeup && core_data->fod_status) {
+	} else if (!core_data->double_wakeup && (core_data->aod_status || core_data->fod_status)) {
 		state_data[0] = GSX_GESTURE_CMD;
 		state_data[1] = 0x00;
 		state_data[2] = 0xF8;
 		ret = goodix_i2c_write(dev, GSX_REG_GESTURE, state_data, 3);
 		ts_info("Set IC double wakeup mode off,FOD mode on;");
-	} else if (!core_data->double_wakeup && (!core_data->fod_status)) {
+	} else if (!core_data->double_wakeup && (core_data->aod_status == 0 && !core_data->fod_status)) {
 		state_data[0] = GSX_GESTURE_CMD;
 		state_data[1] = 0x02;
 		state_data[2] = 0xF6;

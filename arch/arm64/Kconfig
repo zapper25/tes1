@@ -16,6 +16,7 @@ config ARM64
 	select ARCH_HAS_GCOV_PROFILE_ALL
 	select ARCH_HAS_GIGANTIC_PAGE if (MEMORY_ISOLATION && COMPACTION) || CMA
 	select ARCH_HAS_KCOV
+	select ARCH_HAS_SET_DIRECT_MAP
 	select ARCH_HAS_SET_MEMORY
 	select ARCH_HAS_SG_CHAIN
 	select ARCH_HAS_STRICT_KERNEL_RWX
@@ -61,6 +62,7 @@ config ARM64
 	select CLONE_BACKWARDS
 	select COMMON_CLK
 	select CPU_PM if (SUSPEND || CPU_IDLE)
+	select CRC32
 	select DCACHE_WORD_ACCESS
 	select EDAC_SUPPORT
 	select FRAME_POINTER
@@ -738,6 +740,27 @@ config NR_CPUS
 	# These have to remain sorted largest to smallest
 	default "64"
 
+config LITTLE_CPU_MASK
+	int "Bitmask of available LITTLE CPUs"
+	help
+	  This is a bitmask specifying which of the CPUs are LITTLE in a
+	  heterogeneous system. Use 0 if you are unsure, which just results in
+	  this storing the bitmask of all available CPUs.
+
+config BIG_CPU_MASK
+	int "Bitmask of available big CPUs"
+	help
+	  This is a bitmask specifying which of the CPUs are big in a
+	  heterogeneous system. Use 0 if you are unsure, which just results in
+	  this storing the bitmask of all available CPUs.
+
+config PRIME_CPU_MASK
+	int "Bitmask of available prime CPUs"
+	help
+	  This is a bitmask specifying which of the CPUs are prime in a
+	  heterogeneous system. Use 0 if you are unsure, which just results in
+	  this storing the bitmask of all available CPUs.
+
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
 	select GENERIC_IRQ_MIGRATION
@@ -1021,6 +1044,20 @@ config ARM64_TAGGED_ADDR_ABI
 	  relaxed ABI via prctl() allowing tagged addresses to be passed
 	  to system calls as pointer arguments. For details, see
 	  Documentation/arm64/tagged-address-abi.rst.
+
+config RODATA_FULL_DEFAULT_ENABLED
+	bool "Apply r/o permissions of VM areas also to their linear aliases"
+	default n
+	help
+	  Apply read-only attributes of VM areas to the linear alias of
+	  the backing pages as well. This prevents code or read-only data
+	  from being modified (inadvertently or intentionally) via another
+	  mapping of the same memory page. This additional enhancement can
+	  be turned off at runtime by passing rodata=[off|on] (and turned on
+	  with rodata=full if this option is set to 'n')
+
+	  This requires the linear region to be mapped down to pages,
+	  which may adversely affect performance in some cases.
 
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"

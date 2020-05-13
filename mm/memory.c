@@ -450,7 +450,7 @@ static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
 	pgtable_t token = pmd_pgtable(*pmd);
 	pmd_clear(pmd);
 	pte_free_tlb(tlb, token, addr);
-	atomic_long_dec(&tlb->mm->nr_ptes);
+	mm_dec_nr_ptes(tlb->mm);
 }
 
 static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
@@ -551,6 +551,7 @@ static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
 	p4d = p4d_offset(pgd, start);
 	pgd_clear(pgd);
 	p4d_free_tlb(tlb, p4d, start);
+	mm_dec_nr_puds(tlb->mm);
 }
 
 /*
@@ -681,7 +682,7 @@ int __pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address)
 
 	ptl = pmd_lock(mm, pmd);
 	if (likely(pmd_none(*pmd))) {	/* Has another populated it ? */
-		atomic_long_inc(&mm->nr_ptes);
+		mm_inc_nr_ptes(mm);
 		pmd_populate(mm, pmd, new);
 		new = NULL;
 	}
@@ -1314,6 +1315,7 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 				struct zap_details *details)
 {
 	struct mm_struct *mm = tlb->mm;
+	int progress = 0;
 	int force_flush = 0;
 	int rss[NR_MM_COUNTERS];
 	spinlock_t *ptl;
@@ -1329,7 +1331,15 @@ again:
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
 	do {
-		pte_t ptent = *pte;
+		pte_t ptent;
+
+		if (progress++ >= 32) {
+			progress = 0;
+			if (need_resched())
+				break;
+		}
+
+		ptent = *pte;
 		if (pte_none(ptent))
 			continue;
 
@@ -1431,8 +1441,11 @@ again:
 	if (force_flush) {
 		force_flush = 0;
 		tlb_flush_mmu_free(tlb);
-		if (addr != end)
-			goto again;
+	}
+
+	if (addr != end) {
+		progress = 0;
+		goto again;
 	}
 
 	return addr;
@@ -3499,7 +3512,7 @@ static int pte_alloc_one_map(struct vm_fault *vmf)
 			goto map_pte;
 		}
 
-		atomic_long_inc(&vma->vm_mm->nr_ptes);
+		mm_inc_nr_ptes(vma->vm_mm);
 		pmd_populate(vma->vm_mm, vmf->pmd, vmf->prealloc_pte);
 		spin_unlock(vmf->ptl);
 		vmf->prealloc_pte = NULL;
@@ -3559,7 +3572,7 @@ static void deposit_prealloc_pte(struct vm_fault *vmf)
 	 * We are going to consume the prealloc table,
 	 * count that as nr_ptes.
 	 */
-	atomic_long_inc(&vma->vm_mm->nr_ptes);
+	mm_dec_nr_ptes(vma->vm_mm);
 	vmf->prealloc_pte = NULL;
 }
 
@@ -4723,15 +4736,21 @@ int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
 
 	spin_lock(&mm->page_table_lock);
 #ifndef __ARCH_HAS_5LEVEL_HACK
-	if (p4d_present(*p4d))		/* Another has populated it */
+	if (p4d_present(*p4d)) {
+		/* Another has populated it */
 		pud_free(mm, new);
-	else
+	} else {
+		mm_inc_nr_puds(mm);
 		p4d_populate(mm, p4d, new);
+	}
 #else
-	if (pgd_present(*p4d))		/* Another has populated it */
+	if (pgd_present(*p4d)) {
+		/* Another has populated it */
 		pud_free(mm, new);
-	else
+	} else {
+		mm_inc_nr_puds(mm);
 		pgd_populate(mm, p4d, new);
+	}
 #endif /* __ARCH_HAS_5LEVEL_HACK */
 	spin_unlock(&mm->page_table_lock);
 	return 0;
