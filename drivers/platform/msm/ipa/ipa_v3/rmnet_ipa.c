@@ -1234,9 +1234,9 @@ static int ipa3_wwan_change_mtu(struct net_device *dev, int new_mtu)
  * later
  * -EFAULT: Error while transmitting the skb
  */
-static int ipa3_wwan_xmit(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t ipa3_wwan_xmit(struct sk_buff *skb, struct net_device *dev)
 {
-	int ret = 0;
+	netdev_tx_t ret = NETDEV_TX_OK;
 	bool qmap_check;
 	struct ipa3_wwan_private *wwan_ptr = netdev_priv(dev);
 	unsigned long flags;
@@ -4825,7 +4825,7 @@ int rmnet_ipa3_query_per_client_stats_v2(
 				lan_client[i].mac,
 				IPA_MAC_ADDR_SIZE);
 
-		IPAWANDBG("Client ipv4_tx_bytes = %lu, ipv4_rx_bytes = %lu\n",
+		IPAWANDBG("Client ipv4_tx_bytes = %llu, ipv4_rx_bytes = %llu\n",
 				data->client_info[i].ipv4_tx_bytes,
 				data->client_info[i].ipv4_rx_bytes);
 

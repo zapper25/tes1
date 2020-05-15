@@ -60,6 +60,7 @@
 	aliases {
 		serial0 = &qupv3_se12_2uart;
 		hsuart0 = &qupv3_se13_4uart;
+		hsuart1 = &qupv3_se4_2uart;
 		spi0 = &qupv3_se3_spi;
 		spi1 = &qupv3_se1_spi;
 		i2c0 = &qupv3_se4_i2c;
@@ -548,7 +549,7 @@
 	};
 
 	chosen {
-		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket";
+		bootargs = "rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket noirqdebug";
 	};
 
 	soc: soc { };
@@ -2398,6 +2399,7 @@
 		compatible = "qcom,msm-fastrpc-compute";
 		qcom,fastrpc-adsp-audio-pdr;
 		qcom,rpc-latency-us = <235>;
+		qcom,qos-cores = <0 1 2 3>;
 
 		qcom,msm_fastrpc_compute_cb1 {
 			compatible = "qcom,msm-fastrpc-compute-cb";

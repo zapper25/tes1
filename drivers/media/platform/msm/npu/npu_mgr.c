@@ -436,7 +436,8 @@ static void npu_destroy_wq(struct npu_host_ctx *host_ctx)
 static struct workqueue_struct *npu_create_wq(struct npu_host_ctx *host_ctx,
 	const char *name)
 {
-	struct workqueue_struct *wq = create_workqueue(name);
+	struct workqueue_struct *wq =
+		alloc_workqueue(name, WQ_HIGHPRI | WQ_UNBOUND, 0);
 
 	INIT_WORK(&host_ctx->irq_work, host_irq_wq);
 	INIT_DELAYED_WORK(&host_ctx->fw_deinit_work, fw_deinit_wq);
@@ -1217,8 +1218,9 @@ static uint32_t find_networks_perf_mode(struct npu_host_ctx *host_ctx)
 		max_perf_mode = 1;
 	} else {
 		/* find the max level among all the networks */
-		for (i = 0; i < host_ctx->network_num; i++) {
-			if ((network->cur_perf_mode != 0) &&
+		for (i = 0; i < MAX_LOADED_NETWORK; i++) {
+			if ((network->id != 0) &&
+				(network->cur_perf_mode != 0) &&
 				(network->cur_perf_mode > max_perf_mode))
 				max_perf_mode = network->cur_perf_mode;
 			network++;

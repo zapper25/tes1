@@ -2828,7 +2828,7 @@ static int smblib_dc_therm_charging(struct smb_charger *chg,
 					int temp_level)
 {
 	int thermal_icl_ua = 0;
-	int rc;
+	int rc = 0;
 	union power_supply_propval pval = {0, };
 	union power_supply_propval val = {0, };
 
@@ -2879,7 +2879,16 @@ static int smblib_dc_therm_charging(struct smb_charger *chg,
 			thermal_icl_ua = chg->thermal_mitigation_bpp[temp_level];
 			break;
 	}
-	vote(chg->dc_icl_votable, THERMAL_DAEMON_VOTER, true, thermal_icl_ua);
+
+	if (temp_level == 0) {
+		/* if therm_lvl_sel is 0, clear thermal voter */
+		rc = vote(chg->usb_icl_votable, THERMAL_DAEMON_VOTER, false, 0);
+		rc = vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, false, 0);
+	} else {
+		if (thermal_icl_ua > 0)
+			rc = vote(chg->usb_icl_votable, THERMAL_DAEMON_VOTER,
+						true, thermal_icl_ua);
+	}
 
 	return rc;
 }
@@ -2937,7 +2946,7 @@ static int smblib_therm_charging(struct smb_charger *chg)
 {
 	int thermal_icl_ua = 0;
 	int thermal_fcc_ua = 0;
-	int rc;
+	int rc = 0;
 
 	if (chg->system_temp_level >= MAX_TEMP_LEVEL)
 		return 0;
@@ -4013,7 +4022,7 @@ int smblib_set_prop_dc_reset(struct smb_charger *chg)
 
 	rc = smblib_write(chg, DCIN_CMD_PON_REG, DCIN_PON_BIT | MID_CHG_BIT);
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't write %d to DCIN_CMD_PON_REG rc=%d\n",
+		smblib_err(chg, "Couldn't write %ld to DCIN_CMD_PON_REG rc=%d\n",
 			DCIN_PON_BIT | MID_CHG_BIT, rc);
 		return rc;
 	}
@@ -4261,7 +4270,7 @@ int smblib_get_prop_usb_voltage_now(struct smb_charger *chg,
 {
 	union power_supply_propval pval = {0, };
 	int rc, ret = 0;
-	u8 reg;
+	u8 reg = 0;
 
 	mutex_lock(&chg->adc_lock);
 
@@ -8645,7 +8654,7 @@ static void apsd_timer_cb(unsigned long data)
 {
 	struct smb_charger *chg = (struct smb_charger *)data;
 
-	smblib_dbg(chg, PR_MISC, "APSD Extented timer timeout at %lld\n",
+	smblib_dbg(chg, PR_MISC, "APSD Extented timer timeout at %d\n",
 			jiffies_to_msecs(jiffies));
 
 	chg->apsd_ext_timeout = true;

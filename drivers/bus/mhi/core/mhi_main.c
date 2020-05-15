@@ -122,7 +122,7 @@ static void mhi_reg_write_enqueue(struct mhi_controller *mhi_cntrl,
 
 	q_index = q_index & (REG_WRITE_QUEUE_LEN - 1);
 
-	MHI_ASSERT(mhi_cntrl->reg_write_q[q_index].valid, "queue full idx %d");
+	MHI_ASSERT(mhi_cntrl->reg_write_q[q_index].valid, "queue full idx");
 
 	mhi_cntrl->reg_write_q[q_index].reg_addr =  reg_addr;
 	mhi_cntrl->reg_write_q[q_index].val = val;
@@ -1685,11 +1685,12 @@ irqreturn_t mhi_intvec_handlr(int irq_number, void *dev)
 
 	struct mhi_controller *mhi_cntrl = dev;
 	u32 in_reset = -1;
+	int ret = 0;
 
 	/* wake up any events waiting for state change */
 	MHI_VERB("Enter\n");
 	if (unlikely(mhi_cntrl->initiate_mhi_reset)) {
-		mhi_read_reg_field(mhi_cntrl, mhi_cntrl->regs, MHICTRL,
+		ret = mhi_read_reg_field(mhi_cntrl, mhi_cntrl->regs, MHICTRL,
 			MHICTRL_RESET_MASK, MHICTRL_RESET_SHIFT, &in_reset);
 		mhi_cntrl->initiate_mhi_reset = !!in_reset;
 	}
@@ -2653,7 +2654,7 @@ void mhi_debug_reg_dump(struct mhi_controller *mhi_cntrl)
 	enum mhi_dev_state state;
 	enum mhi_ee ee;
 	int i, ret;
-	u32 val;
+	u32 val = 0;
 	void __iomem *mhi_base = mhi_cntrl->regs;
 	void __iomem *bhi_base = mhi_cntrl->bhi;
 	void __iomem *bhie_base = mhi_cntrl->bhie;
