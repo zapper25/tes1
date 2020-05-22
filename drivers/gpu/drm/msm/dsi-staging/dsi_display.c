@@ -5154,6 +5154,55 @@ static ssize_t sysfs_fod_hbm_write(struct device *dev,
 	return count;
 }
 
+static ssize_t sysfs_fod_dim_alpha_read(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct dsi_display *display;
+	struct dsi_panel *panel;
+	uint32_t alpha;
+
+	display = dev_get_drvdata(dev);
+	if (!display) {
+		pr_err("Invalid display\n");
+		return -EINVAL;
+	}
+
+	panel = display->panel;
+
+	alpha = dsi_panel_get_fod_dim_alpha(panel);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", alpha);
+}
+
+static ssize_t sysfs_fod_dim_alpha_write(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct dsi_display *display;
+	struct dsi_panel *panel;
+	uint32_t alpha;
+	int rc = 0;
+
+	display = dev_get_drvdata(dev);
+	if (!display) {
+		pr_err("Invalid display\n");
+		return -EINVAL;
+	}
+
+	rc = kstrtouint(buf, 10, &alpha);
+	if (rc) {
+		pr_err("%s: kstrtouint failed. rc=%d\n", __func__, rc);
+		return rc;
+	}
+
+	panel = display->panel;
+
+	mutex_lock(&panel->panel_lock);
+	dsi_panel_set_fod_dim_alpha(panel, alpha);
+	mutex_unlock(&panel->panel_lock);
+
+	return count;
+}
+
 static ssize_t sysfs_backlight_level_read(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -5188,6 +5237,10 @@ static DEVICE_ATTR(fod_hbm, 0644,
 			sysfs_fod_hbm_read,
 			sysfs_fod_hbm_write);
 
+static DEVICE_ATTR(fod_dim_alpha, 0644,
+			sysfs_fod_dim_alpha_read,
+			sysfs_fod_dim_alpha_write);
+
 static DEVICE_ATTR(backlight_level, 0444,
 			sysfs_backlight_level_read,
 			NULL);
@@ -5196,6 +5249,7 @@ static struct attribute *display_fs_attrs[] = {
 	&dev_attr_doze_status.attr,
 	&dev_attr_doze_mode.attr,
 	&dev_attr_fod_hbm.attr,
+	&dev_attr_fod_dim_alpha.attr,
 	&dev_attr_backlight_level.attr,
 	NULL,
 };

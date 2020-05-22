@@ -228,6 +228,7 @@ struct dsi_panel {
 
 	spinlock_t fod_lock;
 	bool fod_hbm_enabled;
+	uint32_t fod_dim_alpha;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -349,5 +350,9 @@ int dsi_panel_set_doze_mode(struct dsi_panel *panel, enum dsi_doze_mode_type mod
 int dsi_panel_set_fod_hbm_status(struct dsi_panel *panel, bool status);
 
 bool dsi_panel_get_fod_hbm_enabled(struct dsi_panel *panel);
+
+u32 dsi_panel_get_fod_dim_alpha(struct dsi_panel *panel);
+
+void dsi_panel_set_fod_dim_alpha(struct dsi_panel *panel, u32 alpha);
 
 #endif /* _DSI_PANEL_H_ */

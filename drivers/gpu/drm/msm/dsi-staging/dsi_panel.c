@@ -704,6 +704,27 @@ void dsi_panel_set_fod_hbm_enabled(struct dsi_panel *panel, bool status)
 	spin_unlock(&panel->fod_lock);
 }
 
+u32 dsi_panel_get_fod_dim_alpha(struct dsi_panel *panel)
+{
+	u32 alpha;
+
+	spin_lock(&panel->fod_lock);
+	if (panel->fod_hbm_enabled)
+		alpha = panel->fod_dim_alpha;
+	else
+		alpha = 0;
+	spin_unlock(&panel->fod_lock);
+
+	return alpha;
+}
+
+void dsi_panel_set_fod_dim_alpha(struct dsi_panel *panel, u32 alpha)
+{
+	spin_lock(&panel->fod_lock);
+	panel->fod_dim_alpha = alpha;
+	spin_unlock(&panel->fod_lock);
+}
+
 int dsi_panel_update_doze(struct dsi_panel *panel) {
 	bool fod_hbm_enabled = dsi_panel_get_fod_hbm_enabled(panel);
 	int rc = 0;
@@ -3469,6 +3490,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	panel->doze_mode = DSI_DOZE_LPM;
 	panel->doze_enabled = false;
 	panel->fod_hbm_enabled = false;
+	panel->fod_dim_alpha = 0;
 	spin_lock_init(&panel->fod_lock);
 
 	panel->power_mode = SDE_MODE_DPMS_OFF;
