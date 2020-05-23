@@ -35,7 +35,6 @@
 #include <linux/scs.h>
 
 #include <asm/switch_to.h>
-#include <linux/msm_rtb.h>
 #include <asm/tlb.h>
 #ifdef CONFIG_PARAVIRT
 #include <asm/paravirt.h>
@@ -51,18 +50,21 @@
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
+#if defined(CONFIG_SCHED_DEBUG) && defined(HAVE_JUMP_LABEL)
 /*
  * Debugging: various feature bits
+ *
+ * If SCHED_DEBUG is disabled, each compilation unit has its own copy of
+ * sysctl_sched_features, defined in sched.h, to allow constants propagation
+ * at compile time and compiler optimization based on features default.
  */
-
 #define SCHED_FEAT(name, enabled)	\
 	(1UL << __SCHED_FEAT_##name) * enabled |
-
 const_debug unsigned int sysctl_sched_features =
 #include "features.h"
 	0;
-
 #undef SCHED_FEAT
+#endif
 
 /*
  * Number of tasks to iterate in a single balance run.
@@ -445,7 +447,7 @@ void wake_q_add(struct wake_q_head *head, struct task_struct *task)
 	 * state, even in the failed case, an explicit smp_mb() must be used.
 	 */
 	smp_mb__before_atomic();
-	if (cmpxchg_relaxed(&node->next, NULL, WAKE_Q_TAIL))
+	if (unlikely(cmpxchg_relaxed(&node->next, NULL, WAKE_Q_TAIL)))
 		return;
 
 	head->count++;
@@ -2933,7 +2935,7 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 */
 	rq_unpin_lock(rq, rf);
 	spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
-	uncached_logk(LOGK_CTXID, (void *)(u64)next->pid);
+
 	/* Here we just switch the register state and the stack. */
 	switch_to(prev, next, prev);
 	barrier();
@@ -5908,7 +5910,7 @@ int sched_isolate_count(const cpumask_t *mask, bool include_offline)
  */
 int sched_isolate_cpu(int cpu)
 {
-	struct rq *rq = cpu_rq(cpu);
+	struct rq *rq;
 	cpumask_t avail_cpus;
 	int ret_code = 0;
 	u64 start_time = 0;
@@ -5920,10 +5922,13 @@ int sched_isolate_cpu(int cpu)
 
 	cpumask_andnot(&avail_cpus, cpu_online_mask, cpu_isolated_mask);
 
-	if (!cpu_online(cpu)) {
+	if (cpu < 0 || cpu >= nr_cpu_ids || !cpu_possible(cpu)
+			|| !cpu_online(cpu)) {
 		ret_code = -EINVAL;
 		goto out;
 	}
+
+	rq = cpu_rq(cpu);
 
 	if (++cpu_isolation_vote[cpu] > 1)
 		goto out;
@@ -5983,6 +5988,10 @@ int sched_unisolate_cpu_unlocked(int cpu)
 	struct rq *rq = cpu_rq(cpu);
 	u64 start_time = 0;
 
+	if (cpu < 0 || cpu >= nr_cpu_ids || !cpu_possible(cpu)) {
+		ret_code = -EINVAL;
+		goto out;
+	}
 	if (trace_sched_isolate_enabled())
 		start_time = sched_clock();
 

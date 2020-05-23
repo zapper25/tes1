@@ -150,7 +150,7 @@ unsigned int __read_mostly sysctl_sched_energy_aware = 1;
 unsigned int sysctl_sched_wakeup_granularity		= 1000000UL;
 unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
 
-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
+unsigned int __read_mostly sysctl_sched_migration_cost	= 500000UL;
 DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
 
 #ifdef CONFIG_SCHED_WALT
@@ -700,6 +700,7 @@ struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq)
 
 	return rb_entry(last, struct sched_entity, run_node);
 }
+#endif
 
 /**************************************************************
  * Scheduling class statistics methods:
@@ -727,7 +728,6 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 
 	return 0;
 }
-#endif
 
 /*
  * delta /= w
@@ -3766,7 +3766,7 @@ static inline unsigned long _task_util_est(struct task_struct *p)
 static inline unsigned long task_util_est(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
-	if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
+	if (unlikely(!walt_disabled && sysctl_sched_use_walt_task_util))
 		return p->ravg.demand_scaled;
 #endif
 	return max(task_util(p), _task_util_est(p));
@@ -6060,7 +6060,7 @@ static unsigned long cpu_util_without(int cpu, struct task_struct *p)
 	 * utilization from cpu utilization. Instead just use
 	 * cpu_util for this case.
 	 */
-	if (likely(!walt_disabled && sysctl_sched_use_walt_cpu_util) &&
+	if (unlikely(!walt_disabled && sysctl_sched_use_walt_cpu_util) &&
 						p->state == TASK_WAKING)
 		return cpu_util(cpu);
 #endif
@@ -7423,7 +7423,8 @@ static inline bool task_fits_max(struct task_struct *p, int cpu)
 	if (capacity == max_capacity)
 		return true;
 
-	if (task_boost_policy(p) == SCHED_BOOST_ON_BIG &&
+	if ((task_boost_policy(p) == SCHED_BOOST_ON_BIG ||
+			schedtune_prefer_high_cap(p)) &&
 			is_min_capacity_cpu(cpu))
 		return false;
 
@@ -7498,11 +7499,8 @@ static int start_cpu(struct task_struct *p, bool boosted,
 	if (rd->min_cap_orig_cpu != -1
 			&& task_fits_max(p, rd->min_cap_orig_cpu))
 		start_cpu = rd->min_cap_orig_cpu;
-	else if (rd->mid_cap_orig_cpu != -1
-				&& task_fits_max(p, rd->mid_cap_orig_cpu))
-		start_cpu = rd->mid_cap_orig_cpu;
 	else
-		start_cpu = rd->max_cap_orig_cpu;
+		start_cpu = rd->mid_cap_orig_cpu;
 
 	return start_cpu;
 }
@@ -7882,11 +7880,11 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 		 * not in any kind of boost, we break.
 		 */
 		if (!prefer_idle && !prefer_high_cap &&
-		    (target_cpu != -1 || best_idle_cpu != -1) &&
-		    (fbt_env->placement_boost == SCHED_BOOST_NONE ||
-		     sched_boost() != FULL_THROTTLE_BOOST ||
-		     (fbt_env->placement_boost == SCHED_BOOST_ON_BIG &&
-		      !next_group_higher_cap)))
+			(target_cpu != -1 || best_idle_cpu != -1) &&
+			(fbt_env->placement_boost == SCHED_BOOST_NONE ||
+			!is_full_throttle_boost() ||
+			(fbt_env->placement_boost == SCHED_BOOST_ON_BIG &&
+				!next_group_higher_cap)))
 			break;
 
 		/*
@@ -7954,7 +7952,7 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 	if (target_cpu != -1 && !idle_cpu(target_cpu) &&
 			best_idle_cpu != -1) {
 		curr_tsk = READ_ONCE(cpu_rq(target_cpu)->curr);
-		if (curr_tsk && schedtune_prefer_high_cap(curr_tsk)) {
+		if (curr_tsk && schedtune_prefer_high_cap_rcu_locked(curr_tsk)) {
 			target_cpu = best_idle_cpu;
 		}
 	}
@@ -8233,6 +8231,7 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 	int next_cpu = -1, backup_cpu = -1;
 	int boosted = (schedtune_task_boost(p) > 0);
 	bool prefer_high_cap = schedtune_prefer_high_cap(p);
+
 	fbt_env.fastpath = 0;
 	fbt_env.need_idle = 0;
 
@@ -8315,7 +8314,7 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 			goto out;
 
 #ifdef CONFIG_SCHED_WALT
-		if (!walt_disabled && sysctl_sched_use_walt_cpu_util &&
+		if (unlikely(!walt_disabled && sysctl_sched_use_walt_cpu_util) &&
 		    p->state == TASK_WAKING)
 			delta = task_util(p);
 #endif
