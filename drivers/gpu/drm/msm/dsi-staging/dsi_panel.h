@@ -20,6 +20,7 @@
 #include <linux/bitops.h>
 #include <linux/errno.h>
 #include <linux/backlight.h>
+#include <linux/spinlock.h>
 #include <drm/drm_panel.h>
 #include <drm/msm_drm.h>
 
@@ -225,6 +226,7 @@ struct dsi_panel {
 	bool doze_enabled;
 	enum dsi_doze_mode_type doze_mode;
 
+	spinlock_t fod_lock;
 	bool fod_hbm_enabled;
 };
 
@@ -345,5 +347,7 @@ int dsi_panel_set_doze_status(struct dsi_panel *panel, bool status);
 int dsi_panel_set_doze_mode(struct dsi_panel *panel, enum dsi_doze_mode_type mode);
 
 int dsi_panel_set_fod_hbm_status(struct dsi_panel *panel, bool status);
+
+bool dsi_panel_get_fod_hbm_enabled(struct dsi_panel *panel);
 
 #endif /* _DSI_PANEL_H_ */
